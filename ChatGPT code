@@ -1,0 +1,75 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# List of dataset file paths
+file_paths = [
+    "/mnt/data/turtle 1DLC_mobnet_100_turtle kerachut 2Feb24shuffle1_100000.csv",
+    "/mnt/data/turtle 2DLC_mobnet_100_turtle kerachut 2Feb24shuffle1_100000.csv",
+    "/mnt/data/turtle 3DLC_mobnet_100_turtle kerachut 2Feb24shuffle1_100000.csv",
+    "/mnt/data/turtle 5DLC_mobnet_100_turtle kerachut 2Feb24shuffle1_100000.csv",
+    "/mnt/data/turtle 6DLC_mobnet_100_turtle kerachut 2Feb24shuffle1_100000_filtered.csv",
+    "/mnt/data/turtle 7DLC_mobnet_100_turtle kerachut 2Feb24shuffle1_100000.csv",
+    "/mnt/data/turtle 8DLC_mobnet_100_turtle kerachut 2Feb24shuffle1_100000.csv",
+    "/mnt/data/turtle 9DLC_mobnet_100_turtle kerachut 2Feb24shuffle1_100000.csv",
+    "/mnt/data/turtle 10DLC_mobnet_100_turtle kerachut 2Feb24shuffle1_100000.csv",
+    "/mnt/data/turtle 11DLC_mobnet_100_turtle kerachut 2Feb24shuffle1_100000.csv",
+    "/mnt/data/turtle 12DLC_mobnet_100_turtle kerachut 2Feb24shuffle1_100000.csv"
+]
+
+# Select datasets 4, 6, and 7 (zero-based index: 3, 5, 6)
+focus_datasets = [3, 5, 6]
+
+# Loop through selected datasets for refinement
+for i in focus_datasets:
+    file = file_paths[i]
+    
+    # Load dataset with DeepLabCut multi-index header
+    df = pd.read_csv(file, header=[0, 1, 2])
+    
+    # Extract the scorer name dynamically from the dataset (DeepLabCut format)
+    scorer_name = df.columns[1][0]  
+
+    # Check if "Head" keypoint exists
+    if 'Head' in df.columns.get_level_values(1):
+        # Extract X, Y coordinates and likelihood for the Head keypoint
+        x_values = df[(scorer_name, 'Head', 'x')]
+        y_values = df[(scorer_name, 'Head', 'y')]
+        likelihoods = df[(scorer_name, 'Head', 'likelihood')]
+
+        # Step 1: Filter out low-confidence detections (threshold = 0.6)
+        valid_idx = likelihoods > 0.6
+        x_filtered = x_values[valid_idx]
+        y_filtered = y_values[valid_idx]
+
+        # Step 2: Ensure the start point is within expected range (X: 500-600, Y: 600+)
+        valid_start_idx = (x_filtered > 500) & (x_filtered < 600) & (y_filtered > 600)
+
+        if valid_start_idx.any():
+            # Get the first valid index that meets the start conditions
+            start_index = valid_start_idx.idxmax()
+            x_filtered = x_filtered.loc[start_index:]
+            y_filtered = y_filtered.loc[start_index:]
+
+        # Step 3: Apply smoothing to remove erratic jumps (rolling average over 3 frames)
+        if len(x_filtered) > 5:  # Ensure enough data points before smoothing
+            x_filtered = x_filtered.rolling(window=3, center=True, min_periods=1).mean()
+            y_filtered = y_filtered.rolling(window=3, center=True, min_periods=1).mean()
+
+        # Step 4: Plot the refined trajectory
+        plt.figure(figsize=(8, 6))
+        plt.plot(x_filtered, y_filtered, label=f"Dataset {i+1} (Refined)", color='b')
+
+        # Mark updated start and end points
+        if len(x_filtered) > 0 and len(y_filtered) > 0:
+            plt.scatter(x_filtered.iloc[0], y_filtered.iloc[0], color='g', label='Start (Updated)', marker='o', s=100)
+            plt.scatter(x_filtered.iloc[-1], y_filtered.iloc[-1], color='r', label='End', marker='x', s=100)
+
+        # Step 5: Set axis labels and titles
+        plt.xlabel("X Coordinate")
+        plt.ylabel("Y Coordinate")
+        plt.title(f"Refined Trajectory of Head Keypoint - Dataset {i+1}")
+        plt.legend()
+
+        # Step 6: Invert Y-axis for image coordinate consistency
+        plt.gca().invert_yaxis()
+        plt.show()
